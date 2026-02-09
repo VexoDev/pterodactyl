@@ -23,6 +23,7 @@ class StoreNodeRequest extends ApplicationApiRequest
             'description',
             'location_id',
             'fqdn',
+            'sftp_fqdn',
             'scheme',
             'behind_proxy',
             'maintenance_mode',

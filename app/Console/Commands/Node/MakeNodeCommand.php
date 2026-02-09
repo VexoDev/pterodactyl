@@ -12,6 +12,7 @@ class MakeNodeCommand extends Command
                             {--description= : A description to identify the node.}
                             {--locationId= : A valid locationId.}
                             {--fqdn= : The domain name (e.g node.example.com) to be used for connecting to the daemon. An IP address may only be used if you are not using SSL for this node.}
+                            {--sftpFqdn= : Optional domain name (e.g sftp.example.com) used for SFTP connections.}
                             {--public= : Should the node be public or private? (public=1 / private=0).}
                             {--scheme= : Which scheme should be used? (Enable SSL=https / Disable SSL=http).}
                             {--proxy= : Is the daemon behind a proxy? (Yes=1 / No=0).}
@@ -51,6 +52,8 @@ class MakeNodeCommand extends Command
             'https'
         );
         $data['fqdn'] = $this->option('fqdn') ?? $this->ask('Enter a domain name (e.g node.example.com) to be used for connecting to the daemon. An IP address may only be used if you are not using SSL for this node');
+        $data['sftp_fqdn'] = $this->option('sftpFqdn') ?? $this->ask('Enter an optional domain name (e.g sftp.example.com) to be used for SFTP connections, leave blank to use the default node FQDN', null);
+        $data['sftp_fqdn'] = blank($data['sftp_fqdn']) ? null : $data['sftp_fqdn'];
         $data['public'] = $this->option('public') ?? $this->confirm('Should this node be public? As a note, setting a node to private you will be denying the ability to auto-deploy to this node.', true);
         $data['behind_proxy'] = $this->option('proxy') ?? $this->confirm('Is your FQDN behind a proxy?');
         $data['maintenance_mode'] = $this->option('maintenance') ?? $this->confirm('Should maintenance mode be enabled?');

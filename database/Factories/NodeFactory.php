@@ -27,6 +27,7 @@ class NodeFactory extends Factory
             'public' => true,
             'name' => 'FactoryNode_' . Str::random(10),
             'fqdn' => $this->faker->unique()->ipv4,
+            'sftp_fqdn' => null,
             'scheme' => 'http',
             'behind_proxy' => false,
             'memory' => 1024,

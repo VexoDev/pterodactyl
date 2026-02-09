@@ -60,6 +60,11 @@
                         <p class="text-muted small">Please enter domain name (e.g <code>node.example.com</code>) to be used for connecting to the daemon. An IP address may be used <em>only</em> if you are not using SSL for this node.</p>
                     </div>
                     <div class="form-group">
+                        <label for="pSftpFQDN" class="form-label">SFTP FQDN (Optional)</label>
+                        <input type="text" name="sftp_fqdn" id="pSftpFQDN" class="form-control" value="{{ old('sftp_fqdn') }}"/>
+                        <p class="text-muted small">Optional domain name or IP address used for SFTP connections. Leave empty to use the primary node FQDN.</p>
+                    </div>
+                    <div class="form-group">
                         <label class="form-label">Communicate Over SSL</label>
                         <div>
                             <div class="radio radio-success radio-inline">

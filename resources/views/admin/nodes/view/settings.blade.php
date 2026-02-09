@@ -76,6 +76,13 @@
                             </small></p>
                     </div>
                     <div class="form-group col-xs-12">
+                        <label for="sftp_fqdn" class="control-label">SFTP Fully Qualified Domain Name</label>
+                        <div>
+                            <input type="text" autocomplete="off" name="sftp_fqdn" class="form-control" value="{{ old('sftp_fqdn', $node->sftp_fqdn) }}" />
+                        </div>
+                        <p class="text-muted"><small>Optional domain name or IP address used for SFTP connections. Leave this empty to use the node FQDN above.</small></p>
+                    </div>
+                    <div class="form-group col-xs-12">
                         <label class="form-label"><span class="label label-warning"><i class="fa fa-power-off"></i></span> Communicate Over SSL</label>
                         <div>
                             <div class="radio radio-success radio-inline">

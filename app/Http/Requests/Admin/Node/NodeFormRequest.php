@@ -19,6 +19,7 @@ class NodeFormRequest extends AdminFormRequest
 
         $data = Node::getRules();
         $data['fqdn'][] = Fqdn::make('scheme');
+        $data['sftp_fqdn'][] = Fqdn::make();
 
         return $data;
     }

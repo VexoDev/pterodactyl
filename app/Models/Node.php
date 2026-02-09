@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property string|null $description
  * @property int $location_id
  * @property string $fqdn
+ * @property string|null $sftp_fqdn
  * @property string $scheme
  * @property bool $behind_proxy
  * @property bool $maintenance_mode
@@ -84,7 +85,7 @@ class Node extends Model
      */
     protected $fillable = [
         'public', 'name', 'location_id',
-        'description', 'fqdn', 'scheme', 'behind_proxy',
+        'description', 'fqdn', 'sftp_fqdn', 'scheme', 'behind_proxy',
         'memory', 'memory_overallocate', 'disk',
         'disk_overallocate', 'upload_size', 'daemonBase',
         'daemonSFTP', 'daemonListen',
@@ -97,6 +98,7 @@ class Node extends Model
         'location_id' => 'required|exists:locations,id',
         'public' => 'boolean',
         'fqdn' => 'required|string',
+        'sftp_fqdn' => 'nullable|string',
         'scheme' => 'required',
         'behind_proxy' => 'boolean',
         'memory' => 'required|numeric|min:1',
@@ -130,6 +132,14 @@ class Node extends Model
     public function getConnectionAddress(): string
     {
         return sprintf('%s://%s:%s', $this->scheme, $this->fqdn, $this->daemonListen);
+    }
+
+    /**
+     * Get the SFTP host for this node. Falls back to the primary node address.
+     */
+    public function getSftpAddress(): string
+    {
+        return filled($this->sftp_fqdn) ? $this->sftp_fqdn : $this->fqdn;
     }
 
     /**

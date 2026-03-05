@@ -13,9 +13,9 @@ class UpdateSubuserRequest extends SubuserRequest
 
     public function rules(): array
     {
-        return [
+        return array_merge([
             'permissions' => 'required|array',
             'permissions.*' => 'string',
-        ];
+        ], $this->fileAccessRules());
     }
 }

@@ -10,6 +10,7 @@ use Pterodactyl\Models\Permission;
 use Illuminate\Support\Facades\Log;
 use Pterodactyl\Repositories\Eloquent\SubuserRepository;
 use Pterodactyl\Services\Subusers\SubuserCreationService;
+use Pterodactyl\Services\Subusers\SubuserFileAccessService;
 use Pterodactyl\Transformers\Api\Client\SubuserTransformer;
 use Pterodactyl\Repositories\Wings\DaemonRevocationRepository;
 use Pterodactyl\Http\Controllers\Api\Client\ClientApiController;
@@ -27,6 +28,7 @@ class SubuserController extends ClientApiController
     public function __construct(
         private SubuserRepository $repository,
         private SubuserCreationService $creationService,
+        private SubuserFileAccessService $fileAccessService,
         private DaemonRevocationRepository $revocationRepository,
     ) {
         parent::__construct();
@@ -64,15 +66,23 @@ class SubuserController extends ClientApiController
      */
     public function store(StoreSubuserRequest $request, Server $server): array
     {
+        $permissions = $this->getDefaultPermissions($request);
+        $fileAccess = $this->getDefaultFileAccess($request, $permissions);
+
         $response = $this->creationService->handle(
             $server,
             $request->input('email'),
-            $this->getDefaultPermissions($request)
+            $permissions,
+            $fileAccess
         );
 
         Activity::event('server:subuser.create')
             ->subject($response->user)
-            ->property(['email' => $request->input('email'), 'permissions' => $this->getDefaultPermissions($request)])
+            ->property([
+                'email' => $request->input('email'),
+                'permissions' => $permissions,
+                'file_access' => $fileAccess,
+            ])
             ->log();
 
         return $this->fractal->item($response)
@@ -92,27 +102,37 @@ class SubuserController extends ClientApiController
         $subuser = $request->attributes->get('subuser');
 
         $permissions = $this->getDefaultPermissions($request);
-        $current = $subuser->permissions;
+        $fileAccess = $this->getDefaultFileAccess($request, $permissions);
+        $currentPermissions = $subuser->permissions;
+        sort($currentPermissions);
+        $currentFileAccess = $this->sortedFileAccess($subuser->file_access ?? []);
 
-        sort($permissions);
-        sort($current);
+        $permissionsChanged = $permissions !== $currentPermissions;
+        $fileAccessChanged = $fileAccess !== $currentFileAccess;
 
         $log = Activity::event('server:subuser.update')
             ->subject($subuser->user)
             ->property([
                 'email' => $subuser->user->email,
-                'old' => $current,
+                'old' => $currentPermissions,
                 'new' => $permissions,
-                'revoked' => true,
+                'old_file_access' => $currentFileAccess,
+                'new_file_access' => $fileAccess,
+                'revoked' => $permissionsChanged,
             ]);
 
-        // Only update the database and hit up the Wings instance to invalidate JTI's if the permissions
-        // have actually changed for the user.
-        if ($permissions !== $current) {
-            $log->transaction(function ($instance) use ($request, $subuser, $server) {
+        if ($permissionsChanged || $fileAccessChanged) {
+            $log->transaction(function ($instance) use ($subuser, $server, $permissions, $fileAccess, $permissionsChanged) {
                 $this->repository->update($subuser->id, [
-                    'permissions' => $this->getDefaultPermissions($request),
+                    'permissions' => $permissions,
+                    'file_access' => $fileAccess,
                 ]);
+
+                if (!$permissionsChanged) {
+                    $instance->property('revoked', false);
+
+                    return;
+                }
 
                 try {
                     $this->revocationRepository->setNode($server->node)->deauthorize(
@@ -186,6 +206,64 @@ class SubuserController extends ClientApiController
 
         $cleaned = array_intersect($request->input('permissions') ?? [], $allowed);
 
-        return array_unique(array_merge($cleaned, [Permission::ACTION_WEBSOCKET_CONNECT]));
+        $permissions = array_unique(array_merge($cleaned, [Permission::ACTION_WEBSOCKET_CONNECT]));
+        sort($permissions);
+
+        return $permissions;
+    }
+
+    /**
+     * Returns the configured file access rules for a subuser.
+     *
+     * @param string[] $permissions
+     *
+     * @return array<string, array{allow: string[], deny: string[]}>
+     */
+    protected function getDefaultFileAccess(Request $request, array $permissions): array
+    {
+        $fileAccess = $request->input('file_access');
+        if (!is_array($fileAccess)) {
+            return [];
+        }
+
+        return $this->sortedFileAccess($this->fileAccessService->sanitize($fileAccess, $permissions));
+    }
+
+    /**
+     * @param array<string, mixed> $fileAccess
+     *
+     * @return array<string, array{allow: string[], deny: string[]}>
+     */
+    protected function sortedFileAccess(array $fileAccess): array
+    {
+        $sorted = [];
+
+        foreach ($fileAccess as $action => $rules) {
+            if (!is_array($rules)) {
+                continue;
+            }
+
+            $allow = is_array($rules['allow'] ?? null) ? $rules['allow'] : [];
+            $deny = is_array($rules['deny'] ?? null) ? $rules['deny'] : [];
+
+            $allow = array_values(array_filter($allow, fn ($value) => is_string($value) && $value !== ''));
+            $deny = array_values(array_filter($deny, fn ($value) => is_string($value) && $value !== ''));
+
+            sort($allow);
+            sort($deny);
+
+            if (empty($allow) && empty($deny)) {
+                continue;
+            }
+
+            $sorted[$action] = [
+                'allow' => $allow,
+                'deny' => $deny,
+            ];
+        }
+
+        ksort($sorted);
+
+        return $sorted;
     }
 }

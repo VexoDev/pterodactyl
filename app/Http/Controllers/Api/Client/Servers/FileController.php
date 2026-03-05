@@ -5,9 +5,11 @@ namespace Pterodactyl\Http\Controllers\Api\Client\Servers;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Response;
 use Pterodactyl\Models\Server;
+use Pterodactyl\Models\Permission;
 use Illuminate\Http\JsonResponse;
 use Pterodactyl\Facades\Activity;
 use Pterodactyl\Services\Nodes\NodeJWTService;
+use Pterodactyl\Services\Subusers\SubuserFileAccessService;
 use Pterodactyl\Repositories\Wings\DaemonFileRepository;
 use Pterodactyl\Transformers\Api\Client\FileObjectTransformer;
 use Pterodactyl\Http\Controllers\Api\Client\ClientApiController;
@@ -31,6 +33,7 @@ class FileController extends ClientApiController
     public function __construct(
         private NodeJWTService $jwtService,
         private DaemonFileRepository $fileRepository,
+        private SubuserFileAccessService $fileAccessService,
     ) {
         parent::__construct();
     }
@@ -42,9 +45,14 @@ class FileController extends ClientApiController
      */
     public function directory(ListFilesRequest $request, Server $server): array
     {
+        $directory = $request->get('directory') ?? '/';
+        $this->fileAccessService->assertUserCanAccessPaths($server, $request->user(), Permission::ACTION_FILE_READ, [
+            ['path' => $directory, 'directory' => true],
+        ]);
+
         $contents = $this->fileRepository
             ->setServer($server)
-            ->getDirectory($request->get('directory') ?? '/');
+            ->getDirectory($directory);
 
         return $this->fractal->collection($contents)
             ->transformWith($this->getTransformer(FileObjectTransformer::class))
@@ -58,8 +66,11 @@ class FileController extends ClientApiController
      */
     public function contents(GetFileContentsRequest $request, Server $server): Response
     {
+        $file = $request->get('file');
+        $this->fileAccessService->assertUserCanAccessPaths($server, $request->user(), Permission::ACTION_FILE_READ_CONTENT, [$file]);
+
         $response = $this->fileRepository->setServer($server)->getContent(
-            $request->get('file'),
+            $file,
             config('pterodactyl.files.max_edit_size')
         );
 
@@ -76,11 +87,14 @@ class FileController extends ClientApiController
      */
     public function download(GetFileContentsRequest $request, Server $server): array
     {
+        $file = $request->get('file');
+        $this->fileAccessService->assertUserCanAccessPaths($server, $request->user(), Permission::ACTION_FILE_READ_CONTENT, [$file]);
+
         $token = $this->jwtService
             ->setExpiresAt(CarbonImmutable::now()->addMinutes(15))
             ->setUser($request->user())
             ->setClaims([
-                'file_path' => rawurldecode($request->get('file')),
+                'file_path' => rawurldecode($file),
                 'server_uuid' => $server->uuid,
             ])
             ->handle($server->node, $request->user()->id . $server->uuid);
@@ -106,9 +120,12 @@ class FileController extends ClientApiController
      */
     public function write(WriteFileContentRequest $request, Server $server): JsonResponse
     {
-        $this->fileRepository->setServer($server)->putContent($request->get('file'), $request->getContent());
+        $file = $request->get('file');
+        $this->fileAccessService->assertUserCanAccessPaths($server, $request->user(), Permission::ACTION_FILE_CREATE, [$file]);
 
-        Activity::event('server:file.write')->property('file', $request->get('file'))->log();
+        $this->fileRepository->setServer($server)->putContent($file, $request->getContent());
+
+        Activity::event('server:file.write')->property('file', $file)->log();
 
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
     }
@@ -120,13 +137,20 @@ class FileController extends ClientApiController
      */
     public function create(CreateFolderRequest $request, Server $server): JsonResponse
     {
+        $root = $request->input('root') ?? '/';
+        $name = $request->input('name');
+        $this->fileAccessService->assertUserCanAccessPaths($server, $request->user(), Permission::ACTION_FILE_CREATE, [[
+            'path' => $this->fileAccessService->joinPath($root, $name, true),
+            'directory' => true,
+        ]]);
+
         $this->fileRepository
             ->setServer($server)
-            ->createDirectory($request->input('name'), $request->input('root', '/'));
+            ->createDirectory($name, $root);
 
         Activity::event('server:file.create-directory')
-            ->property('name', $request->input('name'))
-            ->property('directory', $request->input('root'))
+            ->property('name', $name)
+            ->property('directory', $root)
             ->log();
 
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
@@ -139,13 +163,22 @@ class FileController extends ClientApiController
      */
     public function rename(RenameFileRequest $request, Server $server): JsonResponse
     {
+        $root = $request->input('root');
+        $files = $request->input('files');
+        $this->fileAccessService->assertUserCanAccessPaths(
+            $server,
+            $request->user(),
+            Permission::ACTION_FILE_UPDATE,
+            $this->getPathsForRename($root, $files)
+        );
+
         $this->fileRepository
             ->setServer($server)
-            ->renameFiles($request->input('root'), $request->input('files'));
+            ->renameFiles($root, $files);
 
         Activity::event('server:file.rename')
-            ->property('directory', $request->input('root'))
-            ->property('files', $request->input('files'))
+            ->property('directory', $root)
+            ->property('files', $files)
             ->log();
 
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
@@ -158,11 +191,14 @@ class FileController extends ClientApiController
      */
     public function copy(CopyFileRequest $request, Server $server): JsonResponse
     {
+        $location = $request->input('location');
+        $this->fileAccessService->assertUserCanAccessPaths($server, $request->user(), Permission::ACTION_FILE_CREATE, [$location]);
+
         $this->fileRepository
             ->setServer($server)
-            ->copyFile($request->input('location'));
+            ->copyFile($location);
 
-        Activity::event('server:file.copy')->property('file', $request->input('location'))->log();
+        Activity::event('server:file.copy')->property('file', $location)->log();
 
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
     }
@@ -172,14 +208,23 @@ class FileController extends ClientApiController
      */
     public function compress(CompressFilesRequest $request, Server $server): array
     {
+        $root = $request->input('root');
+        $files = $request->input('files');
+        $this->fileAccessService->assertUserCanAccessPaths(
+            $server,
+            $request->user(),
+            Permission::ACTION_FILE_ARCHIVE,
+            $this->getPathsForRootFiles($root, $files)
+        );
+
         $file = $this->fileRepository->setServer($server)->compressFiles(
-            $request->input('root'),
-            $request->input('files')
+            $root,
+            $files
         );
 
         Activity::event('server:file.compress')
-            ->property('directory', $request->input('root'))
-            ->property('files', $request->input('files'))
+            ->property('directory', $root)
+            ->property('files', $files)
             ->log();
 
         return $this->fractal->item($file)
@@ -194,14 +239,20 @@ class FileController extends ClientApiController
     {
         set_time_limit(300);
 
+        $root = $request->input('root');
+        $file = $request->input('file');
+        $this->fileAccessService->assertUserCanAccessPaths($server, $request->user(), Permission::ACTION_FILE_CREATE, [
+            $this->fileAccessService->joinPath($root, $file),
+        ]);
+
         $this->fileRepository->setServer($server)->decompressFile(
-            $request->input('root'),
-            $request->input('file')
+            $root,
+            $file
         );
 
         Activity::event('server:file.decompress')
-            ->property('directory', $request->input('root'))
-            ->property('files', $request->input('file'))
+            ->property('directory', $root)
+            ->property('files', $file)
             ->log();
 
         return new JsonResponse([], JsonResponse::HTTP_NO_CONTENT);
@@ -214,14 +265,23 @@ class FileController extends ClientApiController
      */
     public function delete(DeleteFileRequest $request, Server $server): JsonResponse
     {
+        $root = $request->input('root');
+        $files = $request->input('files');
+        $this->fileAccessService->assertUserCanAccessPaths(
+            $server,
+            $request->user(),
+            Permission::ACTION_FILE_DELETE,
+            $this->getPathsForRootFiles($root, $files)
+        );
+
         $this->fileRepository->setServer($server)->deleteFiles(
-            $request->input('root'),
-            $request->input('files')
+            $root,
+            $files
         );
 
         Activity::event('server:file.delete')
-            ->property('directory', $request->input('root'))
-            ->property('files', $request->input('files'))
+            ->property('directory', $root)
+            ->property('files', $files)
             ->log();
 
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
@@ -234,9 +294,18 @@ class FileController extends ClientApiController
      */
     public function chmod(ChmodFilesRequest $request, Server $server): JsonResponse
     {
+        $root = $request->input('root');
+        $files = $request->input('files');
+        $this->fileAccessService->assertUserCanAccessPaths(
+            $server,
+            $request->user(),
+            Permission::ACTION_FILE_UPDATE,
+            $this->getPathsForChmod($root, $files)
+        );
+
         $this->fileRepository->setServer($server)->chmodFiles(
-            $request->input('root'),
-            $request->input('files')
+            $root,
+            $files
         );
 
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
@@ -249,17 +318,107 @@ class FileController extends ClientApiController
      */
     public function pull(PullFileRequest $request, Server $server): JsonResponse
     {
+        $directory = $request->input('directory') ?? '/';
+        $this->fileAccessService->assertUserCanAccessPaths($server, $request->user(), Permission::ACTION_FILE_CREATE, [[
+            'path' => $directory,
+            'directory' => true,
+        ]]);
+
         $this->fileRepository->setServer($server)->pull(
             $request->input('url'),
-            $request->input('directory'),
+            $directory,
             $request->safe(['filename', 'use_header', 'foreground'])
         );
 
         Activity::event('server:file.pull')
-            ->property('directory', $request->input('directory'))
+            ->property('directory', $directory)
             ->property('url', $request->input('url'))
             ->log();
 
         return new JsonResponse([], Response::HTTP_NO_CONTENT);
+    }
+
+    /**
+     * @param mixed $files
+     *
+     * @return array<int, string|array{path: string, directory: bool}>
+     */
+    protected function getPathsForRootFiles(?string $root, $files): array
+    {
+        if (!is_array($files)) {
+            return [];
+        }
+
+        $paths = [];
+        foreach ($files as $file) {
+            if (!is_string($file)) {
+                continue;
+            }
+
+            $paths[] = $this->fileAccessService->joinPath($root, $file);
+        }
+
+        return $paths;
+    }
+
+    /**
+     * @param mixed $files
+     *
+     * @return array<int, array{path: string, directory: bool}>
+     */
+    protected function getPathsForRename(?string $root, $files): array
+    {
+        if (!is_array($files)) {
+            return [];
+        }
+
+        $paths = [];
+        foreach ($files as $file) {
+            if (!is_array($file)) {
+                continue;
+            }
+
+            foreach (['from', 'to'] as $key) {
+                $value = $file[$key] ?? null;
+                if (!is_string($value)) {
+                    continue;
+                }
+
+                $paths[] = [
+                    'path' => $this->fileAccessService->joinPath($root, $value),
+                    'directory' => str_ends_with(trim($value), '/'),
+                ];
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
+     * @param mixed $files
+     *
+     * @return array<int, string>
+     */
+    protected function getPathsForChmod(?string $root, $files): array
+    {
+        if (!is_array($files)) {
+            return [];
+        }
+
+        $paths = [];
+        foreach ($files as $file) {
+            if (!is_array($file)) {
+                continue;
+            }
+
+            $name = $file['file'] ?? null;
+            if (!is_string($name)) {
+                continue;
+            }
+
+            $paths[] = $this->fileAccessService->joinPath($root, $name);
+        }
+
+        return $paths;
     }
 }

@@ -32,6 +32,7 @@ class SubuserTransformer extends BaseTransformer
             'user_id' => $subuser->user_id,
             'server_id' => $subuser->server_id,
             'permissions' => $subuser->permissions,
+            'file_access' => $subuser->file_access ?? [],
             'created_at' => $this->formatTimestamp($subuser->created_at),
             'updated_at' => $this->formatTimestamp($subuser->updated_at),
         ];

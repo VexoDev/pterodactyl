@@ -23,7 +23,10 @@ class SubuserTransformer extends BaseClientTransformer
     {
         return array_merge(
             $this->makeTransformer(UserTransformer::class)->transform($model->user),
-            ['permissions' => $model->permissions]
+            [
+                'permissions' => $model->permissions,
+                'file_access' => $model->file_access ?? [],
+            ]
         );
     }
 }

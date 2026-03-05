@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
  * @property int $user_id
  * @property int $server_id
  * @property array $permissions
+ * @property array|null $file_access
  * @property \Carbon\Carbon $created_at
  * @property \Carbon\Carbon $updated_at
  * @property User $user
@@ -46,6 +47,7 @@ class Subuser extends Model
         'user_id' => 'int',
         'server_id' => 'int',
         'permissions' => 'array',
+        'file_access' => 'array',
     ];
 
     public static array $validationRules = [
@@ -53,6 +55,7 @@ class Subuser extends Model
         'server_id' => 'required|numeric|exists:servers,id',
         'permissions' => 'nullable|array',
         'permissions.*' => 'string',
+        'file_access' => 'nullable|array',
     ];
 
     /**

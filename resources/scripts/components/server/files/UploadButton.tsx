@@ -76,7 +76,7 @@ export default ({ className }: WithClassname) => {
             });
 
             return () =>
-                getFileUploadUrl(uuid).then((url) =>
+                getFileUploadUrl(uuid, directory).then((url) =>
                     axios
                         .post(
                             url,

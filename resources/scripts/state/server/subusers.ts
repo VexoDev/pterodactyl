@@ -12,6 +12,7 @@ export type SubuserPermission =
     | 'user.delete'
     | 'file.create'
     | 'file.read'
+    | 'file.read-content'
     | 'file.update'
     | 'file.delete'
     | 'file.archive'
@@ -30,6 +31,15 @@ export type SubuserPermission =
     | 'schedule.update'
     | 'schedule.delete';
 
+export type SubuserFileAccessAction = 'read' | 'read-content' | 'create' | 'update' | 'delete' | 'archive';
+
+export interface SubuserFileAccessRule {
+    allow: string[];
+    deny: string[];
+}
+
+export type SubuserFileAccess = Partial<Record<SubuserFileAccessAction, SubuserFileAccessRule>>;
+
 export interface Subuser {
     uuid: string;
     username: string;
@@ -38,6 +48,7 @@ export interface Subuser {
     twoFactorEnabled: boolean;
     createdAt: Date;
     permissions: SubuserPermission[];
+    fileAccess: SubuserFileAccess;
 
     can(permission: SubuserPermission): boolean;
 }

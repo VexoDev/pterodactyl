@@ -5,9 +5,11 @@ namespace Pterodactyl\Http\Requests\Api\Client\Servers\Subusers;
 use Illuminate\Http\Request;
 use Pterodactyl\Models\User;
 use Pterodactyl\Models\Subuser;
+use Pterodactyl\Rules\ValidRegex;
 use Pterodactyl\Exceptions\Http\HttpForbiddenException;
 use Pterodactyl\Http\Requests\Api\Client\ClientApiRequest;
 use Pterodactyl\Services\Servers\GetUserPermissionsService;
+use Pterodactyl\Services\Subusers\SubuserFileAccessService;
 
 abstract class SubuserRequest extends ClientApiRequest
 {
@@ -68,5 +70,26 @@ abstract class SubuserRequest extends ClientApiRequest
         if (count(array_diff($permissions, $service->handle($server, $user))) > 0) {
             throw new HttpForbiddenException('Cannot assign permissions to a subuser that your account does not actively possess.');
         }
+    }
+
+    /**
+     * Returns the validation rules used for file access allow and deny lists.
+     */
+    protected function fileAccessRules(): array
+    {
+        $actions = SubuserFileAccessService::actionKeys();
+        $rules = [
+            'file_access' => 'sometimes|array:' . implode(',', $actions),
+        ];
+
+        foreach ($actions as $action) {
+            $rules["file_access.$action"] = 'sometimes|array:allow,deny';
+            $rules["file_access.$action.allow"] = 'sometimes|array|max:100';
+            $rules["file_access.$action.allow.*"] = ['string', 'max:512', new ValidRegex()];
+            $rules["file_access.$action.deny"] = 'sometimes|array|max:100';
+            $rules["file_access.$action.deny.*"] = ['string', 'max:512', new ValidRegex()];
+        }
+
+        return $rules;
     }
 }

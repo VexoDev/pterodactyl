@@ -11,4 +11,11 @@ class UploadFileRequest extends ClientApiRequest
     {
         return Permission::ACTION_FILE_CREATE;
     }
+
+    public function rules(): array
+    {
+        return [
+            'directory' => 'sometimes|nullable|string',
+        ];
+    }
 }

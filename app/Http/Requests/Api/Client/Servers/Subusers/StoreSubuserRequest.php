@@ -13,10 +13,10 @@ class StoreSubuserRequest extends SubuserRequest
 
     public function rules(): array
     {
-        return [
+        return array_merge([
             'email' => 'required|email|between:1,191',
             'permissions' => 'required|array',
             'permissions.*' => 'string',
-        ];
+        ], $this->fileAccessRules());
     }
 }

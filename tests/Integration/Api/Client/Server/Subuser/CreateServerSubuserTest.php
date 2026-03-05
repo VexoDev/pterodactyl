@@ -43,6 +43,7 @@ class CreateServerSubuserTest extends ClientApiIntegrationTestCase
 
         $expected = $response->json('attributes');
         unset($expected['permissions']);
+        unset($expected['file_access']);
 
         $this->assertJsonTransformedWith($expected, $subuser);
     }

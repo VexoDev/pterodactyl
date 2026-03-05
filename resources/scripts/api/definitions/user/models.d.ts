@@ -1,5 +1,5 @@
 import { Model, UUID } from '@/api/definitions';
-import { SubuserPermission } from '@/state/server/subusers';
+import { SubuserPermission, SubuserFileAccess } from '@/state/server/subusers';
 
 interface User extends Model {
     uuid: string;
@@ -9,6 +9,7 @@ interface User extends Model {
     twoFactorEnabled: boolean;
     createdAt: Date;
     permissions: SubuserPermission[];
+    fileAccess: SubuserFileAccess;
     can(permission: SubuserPermission): boolean;
 }
 

@@ -2,6 +2,32 @@ import * as Models from '@definitions/user/models';
 import { FractalResponseData } from '@/api/http';
 import { transform } from '@definitions/helpers';
 
+const normalizeFileAccess = (attributes: Record<string, any>) => {
+    const normalized: Record<string, { allow: string[]; deny: string[] }> = {};
+    const fileAccess = attributes.file_access || {};
+
+    if (typeof fileAccess !== 'object' || fileAccess === null) {
+        return normalized;
+    }
+
+    Object.keys(fileAccess).forEach((action) => {
+        const value = fileAccess[action];
+        if (typeof value !== 'object' || value === null) {
+            return;
+        }
+
+        const allow = Array.isArray(value.allow) ? value.allow.filter((entry) => typeof entry === 'string') : [];
+        const deny = Array.isArray(value.deny) ? value.deny.filter((entry) => typeof entry === 'string') : [];
+        if (!allow.length && !deny.length) {
+            return;
+        }
+
+        normalized[action] = { allow, deny };
+    });
+
+    return normalized;
+};
+
 export default class Transformers {
     static toSSHKey = (data: Record<any, any>): Models.SSHKey => {
         return {
@@ -20,6 +46,7 @@ export default class Transformers {
             image: attributes.image,
             twoFactorEnabled: attributes['2fa_enabled'],
             permissions: attributes.permissions || [],
+            fileAccess: normalizeFileAccess(attributes),
             createdAt: new Date(attributes.created_at),
             can(permission): boolean {
                 return this.permissions.includes(permission);
